@@ -8,13 +8,24 @@ from dotenv import load_dotenv
 from database import engine, Base, get_db
 from api import jobs, cvs, applications, auth
 from config import settings
+from utils.logging import setup_logging, get_logger
 
 load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Setup logging
+    setup_logging(log_level="INFO" if not settings.debug else "DEBUG")
+    logger = get_logger(__name__)
+    logger.info("Starting JobOctubus application")
+    
+    # Create database tables
     Base.metadata.create_all(bind=engine)
+    logger.info("Database tables created/verified")
+    
     yield
+    
+    logger.info("Shutting down JobOctubus application")
 
 app = FastAPI(
     title="JobOctubus",

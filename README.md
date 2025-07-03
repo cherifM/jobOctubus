@@ -1,23 +1,26 @@
 # JobOctubus
 
-An intelligent job search and application management system that automatically adapts your CV and generates personalized cover letters for each job application.
+An intelligent agentic job search tool that automates the entire job application process. Simply search for jobs, select multiple positions, and let the system automatically adapt your CV and generate personalized cover letters for each selected job.
 
 ## Features
 
+- **Agentic Workflow**: Batch process multiple job applications at once
 - **AI-Powered Job Search**: Search across multiple job platforms with intelligent matching
-- **CV Adaptation**: Automatically adapt your CV content to match specific job requirements
-- **Cover Letter Generation**: Generate personalized cover letters using OpenRouter LLM APIs
+- **Automatic CV Adaptation**: Automatically adapt your CV content to match specific job requirements
+- **Smart Cover Letter Generation**: Generate personalized cover letters using OpenRouter LLM APIs
 - **Application Tracking**: Track all your job applications in one place
+- **Personal Website Integration**: Automatically loads CVs from your personal website directory
 - **Multi-language Support**: Support for English and German CVs and applications
 
 ## Tech Stack
 
 ### Backend
-- **FastAPI**: Modern Python web framework
-- **SQLAlchemy**: Database ORM
+- **FastAPI**: Modern Python web framework with async support
+- **SQLAlchemy 2.0**: Database ORM with modern declarative style
 - **OpenRouter**: LLM API integration for CV adaptation and cover letter generation
 - **PyPDF2**: PDF parsing for CV extraction
 - **BeautifulSoup**: Web scraping for job data
+- **Structured Logging**: JSON-formatted logs with rotation
 
 ### Frontend
 - **React**: Modern JavaScript framework
@@ -28,7 +31,7 @@ An intelligent job search and application management system that automatically a
 ## Setup
 
 ### Prerequisites
-- Python 3.8+
+- Python 3.9+ (compatible with older versions)
 - Node.js 16+
 - OpenRouter API key
 
@@ -44,10 +47,13 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Edit `.env` and add your API keys:
+Edit `.env` and add your configuration:
 ```
 OPENROUTER_API_KEY=your_openrouter_key_here
-SECRET_KEY=your_secret_key_here
+SECRET_KEY=your_secret_key_here_min_32_chars
+PERSONAL_WEBSITE_CV_EN_PATH=/path/to/your/english/cv.pdf
+PERSONAL_WEBSITE_CV_DE_PATH=/path/to/your/german/cv.pdf
+DEBUG=false  # Set to true for development
 ```
 
 3. Run the backend:
@@ -74,21 +80,20 @@ The frontend will be available at `http://localhost:3000`
 
 ## Usage
 
-### 1. Upload Your CV
-- Upload your existing CV (PDF format) in English or German
-- The system will automatically parse and extract structured information
-- Your base CVs will be stored for future job applications
+### Agentic Workflow (Recommended)
+1. **Initialize CVs**: The system automatically loads CVs from your personal website directory
+2. **Search Jobs**: Enter keywords or job descriptions to find matching positions
+3. **Batch Select**: Select multiple jobs from the search results
+4. **Automated Processing**: The system will:
+   - Adapt your CV for each selected job
+   - Generate personalized cover letters
+   - Create application records for tracking
+5. **Review & Apply**: Review the generated materials and submit applications
 
-### 2. Search for Jobs
-- Use the job search interface to find relevant positions
-- Filter by location, experience level, job type, and more
-- View match scores based on your CV content
-
-### 3. Apply to Jobs
-- Select jobs you're interested in
-- The system will automatically adapt your CV to highlight relevant experience
-- Generate personalized cover letters tailored to each job
-- Track your application status
+### Manual Workflow (Alternative)
+1. **Upload Your CV**: Upload your existing CV (PDF format) in English or German
+2. **Search for Jobs**: Use the job search interface to find relevant positions
+3. **Apply Individually**: Select jobs one by one for CV adaptation and cover letter generation
 
 ### 4. Manage Applications
 - View all your applications in one dashboard
@@ -98,6 +103,16 @@ The frontend will be available at `http://localhost:3000`
 ## API Documentation
 
 Once the backend is running, visit `http://localhost:8000/docs` to view the interactive API documentation.
+
+## Technical Improvements
+
+### Recent Updates
+- **Async Operations**: Converted to async OpenAI client for better performance
+- **Database Optimizations**: Added connection pooling and cascade constraints
+- **Error Handling**: Specific exception handling for different error scenarios
+- **Environment Validation**: Automatic validation of required settings on startup
+- **Logging System**: Structured JSON logging with automatic rotation
+- **Python Compatibility**: Fixed compatibility issues for Python 3.9+
 
 ## Key Endpoints
 
@@ -110,6 +125,16 @@ Once the backend is running, visit `http://localhost:8000/docs` to view the inte
 
 ## Development
 
+### Environment Setup
+```bash
+# Create and activate virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
 ### Running Tests
 ```bash
 # Backend tests
@@ -119,6 +144,11 @@ pytest
 # Frontend tests
 npm test
 ```
+
+### Logs
+Logs are stored in the `logs/` directory:
+- `joboctubus.log`: General application logs
+- `joboctubus_errors.log`: Error-level logs only
 
 ### Code Style
 - Backend: Follow PEP 8 guidelines

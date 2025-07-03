@@ -12,8 +12,8 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
-    cvs = relationship("CV", back_populates="owner")
-    applications = relationship("Application", back_populates="user")
+    cvs = relationship("CV", back_populates="owner", cascade="all, delete-orphan")
+    applications = relationship("Application", back_populates="user", cascade="all, delete-orphan")
 
 class CV(Base):
     __tablename__ = "cvs"
@@ -31,9 +31,9 @@ class CV(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
-    owner_id = Column(Integer, ForeignKey("users.id"))
+    owner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     owner = relationship("User", back_populates="cvs")
-    applications = relationship("Application", back_populates="cv")
+    applications = relationship("Application", back_populates="cv", cascade="all, delete-orphan")
 
 class Job(Base):
     __tablename__ = "jobs"
@@ -57,7 +57,7 @@ class Job(Base):
     match_score = Column(Float)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
-    applications = relationship("Application", back_populates="job")
+    applications = relationship("Application", back_populates="job", cascade="all, delete-orphan")
 
 class Application(Base):
     __tablename__ = "applications"
@@ -73,9 +73,9 @@ class Application(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
-    user_id = Column(Integer, ForeignKey("users.id"))
-    job_id = Column(Integer, ForeignKey("jobs.id"))
-    cv_id = Column(Integer, ForeignKey("cvs.id"))
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    job_id = Column(Integer, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False)
+    cv_id = Column(Integer, ForeignKey("cvs.id", ondelete="SET NULL"), nullable=True)
     
     user = relationship("User", back_populates="applications")
     job = relationship("Job", back_populates="applications")
@@ -91,7 +91,7 @@ class JobSearch(Base):
     results_count = Column(Integer)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
-    user_id = Column(Integer, ForeignKey("users.id"))
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
 
 class Template(Base):
     __tablename__ = "templates"
@@ -104,4 +104,4 @@ class Template(Base):
     language = Column(String, default="en")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
-    user_id = Column(Integer, ForeignKey("users.id"))
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)

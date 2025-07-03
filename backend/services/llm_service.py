@@ -1,10 +1,15 @@
-import openai
+from openai import AsyncOpenAI
+from openai import OpenAIError, RateLimitError, APITimeoutError, AuthenticationError
 from typing import Optional, List
 from config import settings
+from fastapi import HTTPException
+from utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 class LLMService:
     def __init__(self):
-        self.client = openai.OpenAI(
+        self.client = AsyncOpenAI(
             api_key=settings.openrouter_api_key,
             base_url=settings.openrouter_base_url
         )
@@ -18,18 +23,36 @@ class LLMService:
         temperature: float = 0.7,
         max_tokens: int = 4000
     ) -> str:
+        model_name = model or self.default_model
+        logger.info(f"Generating response with model: {model_name}, temp: {temperature}, max_tokens: {max_tokens}")
+        
         try:
-            response = self.client.chat.completions.create(
-                model=model or self.default_model,
+            response = await self.client.chat.completions.create(
+                model=model_name,
                 messages=[
                     {"role": "user", "content": prompt}
                 ],
                 temperature=temperature,
-                max_tokens=max_tokens
+                max_tokens=max_tokens,
+                timeout=30.0
             )
+            logger.info(f"Successfully generated response with {len(response.choices[0].message.content)} characters")
             return response.choices[0].message.content
+        except AuthenticationError as e:
+            logger.error(f"Authentication error: {str(e)}")
+            raise HTTPException(status_code=401, detail="Invalid API key")
+        except RateLimitError as e:
+            logger.warning(f"Rate limit exceeded: {str(e)}")
+            raise HTTPException(status_code=429, detail="Rate limit exceeded. Please try again later.")
+        except APITimeoutError as e:
+            logger.error(f"Request timeout: {str(e)}")
+            raise HTTPException(status_code=504, detail="Request timed out. Please try again.")
+        except OpenAIError as e:
+            logger.error(f"OpenAI API error: {str(e)}")
+            raise HTTPException(status_code=503, detail=f"AI service error: {str(e)}")
         except Exception as e:
-            raise Exception(f"LLM service error: {str(e)}")
+            logger.exception(f"Unexpected error in generate_response: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
     
     async def generate_cv_adaptation(
         self, 

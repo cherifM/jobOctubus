@@ -168,8 +168,8 @@ class CVService:
     async def initialize_user_cvs(self, user_id: int) -> List[CV]:
         """Initialize CVs from the user's personal website folder"""
         cv_paths = [
-            "/home/cherif/dev/personal-website/assets/cv/Mihoubi_Med_Cherif_CV_EN.pdf",
-            "/home/cherif/dev/personal-website/assets/cv/Mihoubi_Med_Cherif_CV_DE.pdf"
+            settings.personal_website_cv_en_path,
+            settings.personal_website_cv_de_path
         ]
         
         cvs = []
