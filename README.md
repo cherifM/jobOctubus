@@ -5,7 +5,7 @@ An intelligent agentic job search tool that automates the entire job application
 ## Features
 
 - **Agentic Workflow**: Batch process multiple job applications at once
-- **AI-Powered Job Search**: Search across multiple job platforms with intelligent matching
+- **Multi-Source Job Search**: Search German (Arbeitsagentur, TheLocal) and international (RemoteOK) job platforms + LinkedIn*/Indeed* with API keys
 - **Automatic CV Adaptation**: Automatically adapt your CV content to match specific job requirements
 - **Smart Cover Letter Generation**: Generate personalized cover letters using OpenRouter LLM APIs
 - **Application Tracking**: Track all your job applications in one place

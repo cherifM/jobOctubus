@@ -1,0 +1,22 @@
+# Database
+DATABASE_URL=sqlite:///./joboctubus.db
+
+# API Keys
+OPENROUTER_API_KEY=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
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+
+# Job APIs
+LINKEDIN_API_KEY=your_linkedin_key_here
+INDEED_API_KEY=your_indeed_key_here
+
+# Security
+SECRET_KEY=19790826
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+
+# Redis (for Celery)
+REDIS_URL=redis://localhost:6379/0
+
+# Application Settings
+DEBUG=True
+CORS_ORIGINS=http://localhost:3000,http://localhost:8000

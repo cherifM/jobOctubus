@@ -5,10 +5,14 @@ from datetime import datetime, timedelta
 import json
 from bs4 import BeautifulSoup
 import re
+import asyncio
 
 from models.models import Job, JobSearch
 from schemas.schemas import JobSearchRequest, Job as JobSchema
 from config import settings
+from utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 class JobSearchService:
     def __init__(self, db: Session):
@@ -22,10 +26,31 @@ class JobSearchService:
         
         # Search using multiple sources
         try:
-            # Placeholder for actual API integrations
-            # For now, we'll simulate with some mock data
-            mock_jobs = await self._get_mock_jobs(search_request)
-            jobs.extend(mock_jobs)
+            # Get available job sources
+            sources = await self._get_available_sources()
+            logger.info(f"Available job sources: {sources}")
+            
+            # Search each available source
+            search_tasks = []
+            if 'arbeitsagentur' in sources:
+                search_tasks.append(self._search_arbeitsagentur(search_request))
+            if 'remoteok' in sources:
+                search_tasks.append(self._search_remoteok(search_request))
+            if 'thelocal' in sources:
+                search_tasks.append(self._search_thelocal(search_request))
+            
+            # Execute searches concurrently
+            if search_tasks:
+                results = await asyncio.gather(*search_tasks, return_exceptions=True)
+                for result in results:
+                    if isinstance(result, list):
+                        jobs.extend(result)
+                    elif isinstance(result, Exception):
+                        logger.error(f"Search error: {result}")
+            
+            # Log if no results found
+            if not jobs:
+                logger.warning(f"No jobs found for query: {search_request.query}")
             
             # Store search in database
             if user_id:
@@ -38,74 +63,179 @@ class JobSearchService:
             return sorted_jobs[:search_request.max_results]
             
         except Exception as e:
-            print(f"Error in job search: {e}")
+            logger.error(f"Error in job search: {e}")
             return []
     
-    async def _get_mock_jobs(self, search_request: JobSearchRequest) -> List[JobSchema]:
+    async def _get_available_sources(self) -> List[str]:
         """
-        Mock job data for testing - replace with actual API calls
+        Check which job sources are available (no API key required or valid API key)
         """
-        mock_jobs = [
-            Job(
-                external_id="job_1",
-                title="Senior CFD Engineer",
-                company="Siemens Energy",
-                location="Hamburg, Germany",
-                description="We are looking for a Senior CFD Engineer to join our wind energy division. The ideal candidate will have extensive experience with OpenFOAM and computational fluid dynamics.",
-                requirements="PhD in Engineering, 5+ years CFD experience, OpenFOAM expertise, wind energy background",
-                job_type="Full-time",
-                remote_option=True,
-                posted_date=datetime.now() - timedelta(days=2),
-                source="linkedin",
-                url="https://linkedin.com/jobs/1",
-                skills_required=["CFD", "OpenFOAM", "Wind Energy", "Python", "C++", "HPC"],
-                experience_level="Senior",
-                salary_range="€80,000 - €120,000"
-            ),
-            Job(
-                external_id="job_2", 
-                title="Computational Fluid Dynamics Specialist",
-                company="Airbus",
-                location="Hamburg, Germany",
-                description="Join our aerodynamics team working on next-generation aircraft. We need a CFD specialist with strong background in high-performance computing.",
-                requirements="Master's degree in Aerospace Engineering, CFD experience, HPC knowledge, programming skills",
-                job_type="Full-time",
-                remote_option=False,
-                posted_date=datetime.now() - timedelta(days=1),
-                source="indeed",
-                url="https://indeed.com/jobs/2",
-                skills_required=["CFD", "Aerodynamics", "HPC", "ANSYS", "Python", "Fortran"],
-                experience_level="Mid-level",
-                salary_range="€70,000 - €100,000"
-            ),
-            Job(
-                external_id="job_3",
-                title="Research Scientist - Wind Energy",
-                company="Fraunhofer Institute",
-                location="Oldenburg, Germany", 
-                description="Research position focusing on wind turbine aerodynamics and computational modeling. Experience with Lattice Boltzmann Methods preferred.",
-                requirements="PhD in relevant field, research experience, wind energy background, LBM knowledge",
-                job_type="Full-time",
-                remote_option=True,
-                posted_date=datetime.now() - timedelta(days=5),
-                source="glassdoor",
-                url="https://glassdoor.com/jobs/3",
-                skills_required=["Wind Energy", "LBM", "Research", "OpenFOAM", "Python", "Supercomputing"],
-                experience_level="Senior",
-                salary_range="€60,000 - €90,000"
-            )
-        ]
+        sources = []
         
-        # Store jobs in database
-        for job_data in mock_jobs:
-            existing_job = self.db.query(Job).filter(Job.external_id == job_data.external_id).first()
-            if not existing_job:
-                self.db.add(job_data)
+        # Always available (no API key required)
+        sources.extend(['arbeitsagentur', 'remoteok', 'thelocal'])
         
-        self.db.commit()
+        # Check if LinkedIn API key is available
+        if settings.linkedin_api_key and settings.linkedin_api_key != "your_linkedin_key_here":
+            sources.append('linkedin')
         
-        # Return as schemas
-        return [JobSchema.from_orm(job) for job in mock_jobs]
+        # Check if Indeed API key is available
+        if settings.indeed_api_key and settings.indeed_api_key != "your_indeed_key_here":
+            sources.append('indeed')
+        
+        return sources
+    
+    async def _search_arbeitsagentur(self, search_request: JobSearchRequest) -> List[JobSchema]:
+        """
+        Search jobs using German Federal Employment Agency API
+        """
+        try:
+            async with httpx.AsyncClient() as client:
+                # Bundesagentur für Arbeit API endpoint
+                url = "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4/jobs"
+                
+                params = {
+                    "was": search_request.query,
+                    "wo": search_request.location or "Hamburg",
+                    "page": 1,
+                    "size": min(search_request.max_results, 25)
+                }
+                
+                headers = {
+                    "User-Agent": "JobOctubus/1.0 (job-search-tool)"
+                }
+                
+                response = await client.get(url, params=params, headers=headers, timeout=10)
+                response.raise_for_status()
+                
+                data = response.json()
+                jobs = []
+                
+                for job_data in data.get('stellenangebote', []):
+                    job = JobSchema(
+                        external_id=f"ba_{job_data.get('hashId', '')}",
+                        title=job_data.get('beruf', ''),
+                        company=job_data.get('arbeitgeber', ''),
+                        location=job_data.get('arbeitsort', {}).get('ort', ''),
+                        description=job_data.get('stellenbeschreibung', ''),
+                        job_type="Full-time",
+                        remote_option=False,
+                        posted_date=datetime.now(),
+                        source="arbeitsagentur",
+                        url=f"https://www.arbeitsagentur.de/jobsuche/jobdetail/{job_data.get('hashId', '')}",
+                        skills_required=[],
+                        experience_level="Mid-level"
+                    )
+                    jobs.append(job)
+                
+                logger.info(f"Found {len(jobs)} jobs from Arbeitsagentur")
+                return jobs
+                
+        except Exception as e:
+            logger.error(f"Error searching Arbeitsagentur: {e}")
+            return []
+    
+    async def _search_remoteok(self, search_request: JobSearchRequest) -> List[JobSchema]:
+        """
+        Search remote jobs using RemoteOK API
+        """
+        try:
+            async with httpx.AsyncClient() as client:
+                url = "https://remoteok.io/api"
+                
+                headers = {
+                    "User-Agent": "JobOctubus/1.0 (job-search-tool)"
+                }
+                
+                response = await client.get(url, headers=headers, timeout=10)
+                response.raise_for_status()
+                
+                data = response.json()
+                jobs = []
+                
+                # Filter jobs by query
+                query_lower = search_request.query.lower()
+                count = 0
+                
+                for job_data in data[1:]:  # Skip first item (metadata)
+                    if count >= search_request.max_results:
+                        break
+                    
+                    # Simple keyword matching
+                    job_text = f"{job_data.get('position', '')} {job_data.get('description', '')}".lower()
+                    if query_lower in job_text:
+                        job = JobSchema(
+                            external_id=f"remote_{job_data.get('id', '')}",
+                            title=job_data.get('position', ''),
+                            company=job_data.get('company', ''),
+                            location="Remote",
+                            description=job_data.get('description', ''),
+                            job_type="Full-time",
+                            remote_option=True,
+                            posted_date=datetime.fromtimestamp(job_data.get('date', 0)),
+                            source="remoteok",
+                            url=job_data.get('url', ''),
+                            skills_required=job_data.get('tags', []),
+                            experience_level="Mid-level",
+                            salary_range=job_data.get('salary', '')
+                        )
+                        jobs.append(job)
+                        count += 1
+                
+                logger.info(f"Found {len(jobs)} jobs from RemoteOK")
+                return jobs
+                
+        except Exception as e:
+            logger.error(f"Error searching RemoteOK: {e}")
+            return []
+    
+    async def _search_thelocal(self, search_request: JobSearchRequest) -> List[JobSchema]:
+        """
+        Search jobs using TheLocal.de RSS feed
+        """
+        try:
+            async with httpx.AsyncClient() as client:
+                url = "https://www.thelocal.de/jobs/feed/"
+                
+                response = await client.get(url, timeout=10)
+                response.raise_for_status()
+                
+                # Parse RSS feed
+                soup = BeautifulSoup(response.text, 'xml')
+                jobs = []
+                
+                query_lower = search_request.query.lower()
+                
+                for item in soup.find_all('item')[:search_request.max_results]:
+                    title = item.find('title').text if item.find('title') else ''
+                    description = item.find('description').text if item.find('description') else ''
+                    
+                    # Simple keyword matching
+                    if query_lower in f"{title} {description}".lower():
+                        job = JobSchema(
+                            external_id=f"thelocal_{hash(item.find('link').text if item.find('link') else '')}",
+                            title=title,
+                            company="Various",
+                            location="Germany",
+                            description=description,
+                            job_type="Full-time",
+                            remote_option=False,
+                            posted_date=datetime.now(),
+                            source="thelocal",
+                            url=item.find('link').text if item.find('link') else '',
+                            skills_required=[],
+                            experience_level="Mid-level"
+                        )
+                        jobs.append(job)
+                
+                logger.info(f"Found {len(jobs)} jobs from TheLocal")
+                return jobs
+                
+        except Exception as e:
+            logger.error(f"Error searching TheLocal: {e}")
+            return []
+    
+    
     
     def _filter_jobs(self, jobs: List[JobSchema], search_request: JobSearchRequest) -> List[JobSchema]:
         """

@@ -225,9 +225,9 @@ const AgenticJobSearch: React.FC = () => {
 
       {/* Progress Steps */}
       <div className="flex items-center space-x-4 bg-gray-50 p-4 rounded-lg">
-        <div className={`flex items-center space-x-2 ${currentStep === 'search' ? 'text-primary-600 font-medium' : currentStep !== 'search' ? 'text-green-600' : 'text-gray-400'}`}>
-          <div className={`w-8 h-8 rounded-full flex items-center justify-center ${currentStep === 'search' ? 'bg-primary-100' : currentStep !== 'search' ? 'bg-green-100' : 'bg-gray-100'}`}>
-            {currentStep !== 'search' ? <CheckIcon className="w-4 h-4" /> : '1'}
+        <div className={`flex items-center space-x-2 ${currentStep === 'search' ? 'text-primary-600 font-medium' : ['select', 'process', 'complete'].includes(currentStep) ? 'text-green-600' : 'text-gray-400'}`}>
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center ${currentStep === 'search' ? 'bg-primary-100' : ['select', 'process', 'complete'].includes(currentStep) ? 'bg-green-100' : 'bg-gray-100'}`}>
+            {['select', 'process', 'complete'].includes(currentStep) ? <CheckIcon className="w-4 h-4" /> : '1'}
           </div>
           <span>Search Jobs</span>
         </div>

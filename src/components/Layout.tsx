@@ -1,6 +1,7 @@
 import React from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import StatusIndicator from './StatusIndicator';
 import { 
   HomeIcon, 
   BriefcaseIcon, 
@@ -52,6 +53,11 @@ const Layout: React.FC = () => {
               );
             })}
           </nav>
+
+          {/* Status Indicator */}
+          <div className="px-4 py-2 border-t border-gray-200">
+            <StatusIndicator />
+          </div>
 
           {/* User menu */}
           <div className="p-4 border-t border-gray-200">

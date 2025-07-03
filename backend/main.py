@@ -6,7 +6,7 @@ import os
 from dotenv import load_dotenv
 
 from database import engine, Base, get_db
-from api import jobs, cvs, applications, auth
+from api import jobs, cvs, applications, auth, status
 from config import settings
 from utils.logging import setup_logging, get_logger
 
@@ -46,6 +46,7 @@ app.include_router(auth.router, prefix="/api/auth", tags=["authentication"])
 app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"])
 app.include_router(cvs.router, prefix="/api/cvs", tags=["cvs"])
 app.include_router(applications.router, prefix="/api/applications", tags=["applications"])
+app.include_router(status.router, prefix="/api/status", tags=["status"])
 
 @app.get("/")
 async def root():
