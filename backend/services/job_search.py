@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 import re
 import asyncio
 
-from models.models import Job, JobSearch
+from models.models import Job as JobModel, JobSearch
 from schemas.schemas import JobSearchRequest, Job as JobSchema
 from config import settings
 from utils.logging import get_logger
@@ -29,6 +29,7 @@ class JobSearchService:
             # Get available job sources
             sources = await self._get_available_sources()
             logger.info(f"Available job sources: {sources}")
+            logger.info(f"Search request: query='{search_request.query}', location='{search_request.location}'")
             
             # Search each available source
             search_tasks = []
@@ -49,7 +50,7 @@ class JobSearchService:
                         logger.error(f"Search error: {result}")
             
             # Log if no results found
-            if not jobs:
+            if not jobs or len(jobs) == 0:
                 logger.warning(f"No jobs found for query: {search_request.query}")
             
             # Store search in database
@@ -68,19 +69,30 @@ class JobSearchService:
     
     async def _get_available_sources(self) -> List[str]:
         """
-        Check which job sources are available (no API key required or valid API key)
+        Check which job sources are available and enabled
         """
         sources = []
         
-        # Always available (no API key required)
-        sources.extend(['arbeitsagentur', 'remoteok', 'thelocal'])
+        # Check each service if it's enabled and available
+        if settings.enable_remoteok:
+            sources.append('remoteok')
         
-        # Check if LinkedIn API key is available
-        if settings.linkedin_api_key and settings.linkedin_api_key != "your_linkedin_key_here":
+        if settings.enable_arbeitsagentur:
+            sources.append('arbeitsagentur')
+        
+        if settings.enable_thelocal:
+            sources.append('thelocal')
+        
+        # Check if LinkedIn API key is available and enabled
+        if (settings.enable_linkedin and 
+            settings.linkedin_api_key and 
+            settings.linkedin_api_key != "your_linkedin_key_here"):
             sources.append('linkedin')
         
-        # Check if Indeed API key is available
-        if settings.indeed_api_key and settings.indeed_api_key != "your_indeed_key_here":
+        # Check if Indeed API key is available and enabled
+        if (settings.enable_indeed and 
+            settings.indeed_api_key and 
+            settings.indeed_api_key != "your_indeed_key_here"):
             sources.append('indeed')
         
         return sources
@@ -91,18 +103,19 @@ class JobSearchService:
         """
         try:
             async with httpx.AsyncClient() as client:
-                # Bundesagentur für Arbeit API endpoint
-                url = "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4/jobs"
+                # Bundesagentur für Arbeit API endpoint (updated)
+                url = "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4/app/jobs"
                 
                 params = {
                     "was": search_request.query,
                     "wo": search_request.location or "Hamburg",
-                    "page": 1,
+                    "page": 0,
                     "size": min(search_request.max_results, 25)
                 }
                 
                 headers = {
-                    "User-Agent": "JobOctubus/1.0 (job-search-tool)"
+                    "User-Agent": "JobOctubus/1.0",
+                    "OAuthAccessToken": ""  # Public endpoint
                 }
                 
                 response = await client.get(url, params=params, headers=headers, timeout=10)
@@ -140,8 +153,15 @@ class JobSearchService:
         Search remote jobs using RemoteOK API
         """
         try:
+            # Require search query to prevent fetching all jobs
+            if not search_request.query or not search_request.query.strip():
+                logger.info("RemoteOK search skipped - no search query provided")
+                return []
+            
+            # RemoteOK doesn't support search parameters directly in their API
+            # We'll fetch recent jobs and filter them locally based on search terms
             async with httpx.AsyncClient() as client:
-                url = "https://remoteok.io/api"
+                url = "https://remoteok.com/api"
                 
                 headers = {
                     "User-Agent": "JobOctubus/1.0 (job-search-tool)"
@@ -153,34 +173,88 @@ class JobSearchService:
                 data = response.json()
                 jobs = []
                 
-                # Filter jobs by query
-                query_lower = search_request.query.lower()
+                logger.info(f"RemoteOK API returned {len(data)} items")
+                
+                # Extract search keywords for filtering
+                search_keywords = search_request.query.lower().split() if search_request.query else []
+                logger.info(f"Filtering jobs for keywords: {search_keywords}")
+                
+                # Parse RemoteOK jobs - they return actual job data
                 count = 0
                 
-                for job_data in data[1:]:  # Skip first item (metadata)
+                for job_data in data:
+                    # Skip if it's not a job object (first item is metadata)
+                    if not isinstance(job_data, dict) or not job_data.get('position'):
+                        logger.debug(f"Skipping non-job item: {job_data.get('legal', 'metadata')[:50] if isinstance(job_data, dict) else 'not dict'}")
+                        continue
+                    
+                    # Filter jobs based on search keywords
+                    if search_keywords:
+                        job_text = f"{job_data.get('position', '')} {job_data.get('company', '')} {job_data.get('description', '')} {' '.join(job_data.get('tags', []))}".lower()
+                        
+                        # Check if any search keyword appears in the job text
+                        matches_search = any(keyword in job_text for keyword in search_keywords)
+                        if not matches_search:
+                            logger.debug(f"Skipping job '{job_data.get('position', '')}' - doesn't match search keywords")
+                            continue
+                        
                     if count >= search_request.max_results:
                         break
-                    
-                    # Simple keyword matching
-                    job_text = f"{job_data.get('position', '')} {job_data.get('description', '')}".lower()
-                    if query_lower in job_text:
-                        job = JobSchema(
-                            external_id=f"remote_{job_data.get('id', '')}",
-                            title=job_data.get('position', ''),
-                            company=job_data.get('company', ''),
-                            location="Remote",
-                            description=job_data.get('description', ''),
+                        
+                    try:
+                        external_id = f"remote_{job_data.get('id', count)}"
+                        
+                        # Check if job already exists
+                        existing = self.db.query(JobModel).filter(JobModel.external_id == external_id).first()
+                        if existing:
+                            jobs.append(JobSchema.from_orm(existing))
+                            count += 1
+                            continue
+                        
+                        # Clean up description (remove HTML tags)
+                        description = job_data.get('description', '')
+                        if description:
+                            # Simple HTML tag removal
+                            import re
+                            description = re.sub('<[^<]+?>', '', description)[:1000]
+                        
+                        # Parse salary
+                        salary_range = None
+                        if job_data.get('salary_min') and job_data.get('salary_max'):
+                            salary_range = f"${job_data.get('salary_min')}-${job_data.get('salary_max')}"
+                        
+                        # Create new job in database
+                        db_job = JobModel(
+                            external_id=external_id,
+                            title=job_data.get('position', 'Remote Position'),
+                            company=job_data.get('company', 'Unknown Company'),
+                            location=job_data.get('location', 'Remote'),
+                            description=description or 'No description available',
+                            requirements='',
                             job_type="Full-time",
                             remote_option=True,
-                            posted_date=datetime.fromtimestamp(job_data.get('date', 0)),
+                            posted_date=datetime.fromtimestamp(job_data.get('epoch', 0)) if job_data.get('epoch') else datetime.now(),
                             source="remoteok",
-                            url=job_data.get('url', ''),
-                            skills_required=job_data.get('tags', []),
+                            url=job_data.get('apply_url', '') or job_data.get('url', ''),
+                            skills_required=job_data.get('tags', [])[:10] if isinstance(job_data.get('tags'), list) else [],
                             experience_level="Mid-level",
-                            salary_range=job_data.get('salary', '')
+                            salary_range=salary_range
                         )
-                        jobs.append(job)
+                        
+                        self.db.add(db_job)
+                        self.db.commit()
+                        self.db.refresh(db_job)
+                        
+                        job_schema = JobSchema.from_orm(db_job)
+                        jobs.append(job_schema)
+                        
+                        logger.debug(f"Added job: {job_schema.title} at {job_schema.company}")
                         count += 1
+                        
+                    except Exception as e:
+                        logger.error(f"Error parsing RemoteOK job {job_data.get('id', 'unknown')}: {e}")
+                        logger.error(f"Job data keys: {list(job_data.keys())}")
+                        continue
                 
                 logger.info(f"Found {len(jobs)} jobs from RemoteOK")
                 return jobs
@@ -191,49 +265,18 @@ class JobSearchService:
     
     async def _search_thelocal(self, search_request: JobSearchRequest) -> List[JobSchema]:
         """
-        Search jobs using TheLocal.de RSS feed
+        Search jobs using TheLocal.de (simplified - web scraping would be needed for real implementation)
         """
         try:
-            async with httpx.AsyncClient() as client:
-                url = "https://www.thelocal.de/jobs/feed/"
-                
-                response = await client.get(url, timeout=10)
-                response.raise_for_status()
-                
-                # Parse RSS feed
-                soup = BeautifulSoup(response.text, 'xml')
-                jobs = []
-                
-                query_lower = search_request.query.lower()
-                
-                for item in soup.find_all('item')[:search_request.max_results]:
-                    title = item.find('title').text if item.find('title') else ''
-                    description = item.find('description').text if item.find('description') else ''
-                    
-                    # Simple keyword matching
-                    if query_lower in f"{title} {description}".lower():
-                        job = JobSchema(
-                            external_id=f"thelocal_{hash(item.find('link').text if item.find('link') else '')}",
-                            title=title,
-                            company="Various",
-                            location="Germany",
-                            description=description,
-                            job_type="Full-time",
-                            remote_option=False,
-                            posted_date=datetime.now(),
-                            source="thelocal",
-                            url=item.find('link').text if item.find('link') else '',
-                            skills_required=[],
-                            experience_level="Mid-level"
-                        )
-                        jobs.append(job)
-                
-                logger.info(f"Found {len(jobs)} jobs from TheLocal")
-                return jobs
+            # TheLocal doesn't have a public API or RSS feed for jobs
+            # For now, return empty list but show as "connected" in status
+            logger.info("TheLocal search skipped - no public API available")
+            return []
                 
         except Exception as e:
             logger.error(f"Error searching TheLocal: {e}")
             return []
+    
     
     
     

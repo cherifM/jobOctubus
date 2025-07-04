@@ -29,20 +29,19 @@ const Dashboard: React.FC = () => {
 
   const loadDashboardData = async () => {
     try {
-      const [jobs, cvs, applications] = await Promise.all([
-        jobService.getJobs({ limit: 5 }),
+      const [cvs, applications] = await Promise.all([
         cvService.getCVs({ limit: 5 }),
         applicationService.getApplications({ limit: 5 })
       ]);
 
       setStats({
-        totalJobs: jobs.length,
+        totalJobs: 0, // Only show jobs from actual searches
         totalCVs: cvs.length,
         totalApplications: applications.length,
         pendingApplications: applications.filter(app => app.status === 'pending').length
       });
 
-      setRecentJobs(jobs);
+      setRecentJobs([]); // No automatic job loading
       setRecentApplications(applications);
     } catch (error) {
       toast.error('Failed to load dashboard data');

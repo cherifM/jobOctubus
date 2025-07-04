@@ -4,7 +4,6 @@ import {
   MagnifyingGlassIcon, 
   MapPinIcon, 
   BriefcaseIcon,
-  CurrencyDollarIcon,
   CalendarIcon,
   CheckIcon,
   DocumentTextIcon,
@@ -14,6 +13,7 @@ import {
 import { jobService, Job, JobSearchRequest } from '../services/jobService';
 import { cvService, CV } from '../services/cvService';
 import { applicationService } from '../services/applicationService';
+import { settingsService, JobSearchServicesResponse } from '../services/settingsService';
 import toast from 'react-hot-toast';
 
 const AgenticJobSearch: React.FC = () => {
@@ -22,14 +22,14 @@ const AgenticJobSearch: React.FC = () => {
   const [cvs, setCvs] = useState<CV[]>([]);
   const [selectedCV, setSelectedCV] = useState<CV | null>(null);
   const [loading, setLoading] = useState(false);
-  const [processing, setProcessing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [location, setLocation] = useState('');
   const [currentStep, setCurrentStep] = useState<'search' | 'select' | 'process' | 'complete'>('search');
+  const [searchServices, setSearchServices] = useState<JobSearchServicesResponse | null>(null);
 
   useEffect(() => {
     loadCVs();
-    loadInitialJobs();
+    loadSearchServices();
   }, []);
 
   const loadCVs = async () => {
@@ -44,12 +44,13 @@ const AgenticJobSearch: React.FC = () => {
     }
   };
 
-  const loadInitialJobs = async () => {
+
+  const loadSearchServices = async () => {
     try {
-      const jobsData = await jobService.getJobs({ limit: 10 });
-      setJobs(jobsData);
+      const services = await settingsService.getJobSearchServices();
+      setSearchServices(services);
     } catch (error) {
-      console.error('Failed to load initial jobs');
+      console.error('Failed to load search services');
     }
   };
 
@@ -107,7 +108,6 @@ const AgenticJobSearch: React.FC = () => {
       return;
     }
 
-    setProcessing(true);
     setCurrentStep('process');
 
     try {
@@ -181,7 +181,7 @@ const AgenticJobSearch: React.FC = () => {
       toast.error('Failed to process applications');
       setCurrentStep('select');
     } finally {
-      setProcessing(false);
+      // Processing state managed by currentStep
     }
   };
 
@@ -299,6 +299,29 @@ const AgenticJobSearch: React.FC = () => {
               <span>{loading ? 'Searching...' : 'Search Jobs'}</span>
             </button>
           </div>
+
+          {/* Job Search Services Status */}
+          {searchServices && (
+            <div className="mt-4 pt-4 border-t">
+              <p className="text-xs text-gray-500 mb-2">Enabled Search Services:</p>
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(searchServices.services)
+                  .filter(([_, service]) => service.enabled)
+                  .map(([key, service]) => (
+                    <span 
+                      key={key}
+                      className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800"
+                    >
+                      <span className="w-2 h-2 bg-green-500 rounded-full mr-1"></span>
+                      {service.name}
+                    </span>
+                  ))}
+                {Object.values(searchServices.services).filter(service => service.enabled).length === 0 && (
+                  <span className="text-xs text-red-600">No services enabled</span>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

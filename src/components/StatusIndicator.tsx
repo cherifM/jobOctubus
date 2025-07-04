@@ -131,10 +131,10 @@ const StatusIndicator: React.FC = () => {
             
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                {getStatusIcon(status.thelocal)}
-                <span className="text-sm text-gray-700">TheLocal</span>
+                {getStatusIcon(status.adzuna)}
+                <span className="text-sm text-gray-700">Adzuna (Germany)</span>
               </div>
-              <span className="text-xs text-gray-500">{status.thelocal.response_time}ms</span>
+              <span className="text-xs text-gray-500">{status.adzuna.response_time}ms</span>
             </div>
           </div>
           

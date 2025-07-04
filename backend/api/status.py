@@ -14,42 +14,57 @@ async def get_system_status() -> Dict[str, Any]:
     Check the health status of all external services
     """
     status = {
-        "openrouter": {"status": "unknown", "message": "", "response_time": 0},
-        "arbeitsagentur": {"status": "unknown", "message": "", "response_time": 0},
-        "remoteok": {"status": "unknown", "message": "", "response_time": 0},
-        "thelocal": {"status": "unknown", "message": "", "response_time": 0},
+        "openrouter": {"status": "unknown", "message": "", "response_time": 0, "enabled": True},
+        "arbeitsagentur": {"status": "unknown", "message": "", "response_time": 0, "enabled": settings.enable_arbeitsagentur},
+        "remoteok": {"status": "unknown", "message": "", "response_time": 0, "enabled": settings.enable_remoteok},
+        "adzuna": {"status": "unknown", "message": "", "response_time": 0, "enabled": False},  # Not implemented
         "overall": "checking"
     }
     
-    # Check all services concurrently
-    tasks = [
-        check_openrouter_status(),
-        check_arbeitsagentur_status(),
-        check_remoteok_status(),
-        check_thelocal_status()
-    ]
+    # Check only enabled services concurrently
+    tasks = [check_openrouter_status()]  # OpenRouter is always checked
+    service_names = ["openrouter"]
+    
+    if settings.enable_arbeitsagentur:
+        tasks.append(check_arbeitsagentur_status())
+        service_names.append("arbeitsagentur")
+    
+    if settings.enable_remoteok:
+        tasks.append(check_remoteok_status())
+        service_names.append("remoteok")
+    
+    # Adzuna is always disabled for now
+    service_names.append("adzuna")
     
     try:
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
-        # Update status with results
-        service_names = ["openrouter", "arbeitsagentur", "remoteok", "thelocal"]
+        # Update status with results (only for enabled services)
         for i, result in enumerate(results):
             service_name = service_names[i]
             if isinstance(result, dict):
-                status[service_name] = result
+                status[service_name].update(result)
             else:
-                status[service_name] = {
+                status[service_name].update({
                     "status": "error", 
                     "message": str(result), 
                     "response_time": 0
-                }
+                })
         
-        # Determine overall status
-        all_statuses = [status[service]["status"] for service in service_names]
-        if all(s == "connected" for s in all_statuses):
+        # Mark disabled services as such
+        for service_name in ["arbeitsagentur", "remoteok"]:
+            if not status[service_name]["enabled"]:
+                status[service_name].update({
+                    "status": "disabled",
+                    "message": "Service disabled in configuration",
+                    "response_time": 0
+                })
+        
+        # Determine overall status (only consider enabled services)
+        enabled_statuses = [status[service]["status"] for service in service_names if status[service]["enabled"]]
+        if all(s == "connected" for s in enabled_statuses):
             status["overall"] = "healthy"
-        elif any(s == "connected" for s in all_statuses):
+        elif any(s == "connected" for s in enabled_statuses):
             status["overall"] = "partial"
         else:
             status["overall"] = "unhealthy"
@@ -115,17 +130,19 @@ async def check_arbeitsagentur_status() -> Dict[str, Any]:
     
     try:
         async with httpx.AsyncClient() as client:
-            url = "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4/jobs"
-            params = {"was": "test", "wo": "Hamburg", "size": 1}
-            headers = {"User-Agent": "JobOctubus/1.0 (job-search-tool)"}
+            # Check if the Arbeitsagentur website is accessible
+            url = "https://www.arbeitsagentur.de/jobsuche/"
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
             
-            response = await client.get(url, params=params, headers=headers, timeout=5.0)
+            response = await client.get(url, headers=headers, timeout=5.0, follow_redirects=True)
             response_time = round((time.time() - start_time) * 1000)
             
             if response.status_code == 200:
                 return {
                     "status": "connected",
-                    "message": "Arbeitsagentur API accessible",
+                    "message": "Arbeitsagentur website accessible",
                     "response_time": response_time
                 }
             else:
@@ -157,13 +174,58 @@ async def check_remoteok_status() -> Dict[str, Any]:
         async with httpx.AsyncClient() as client:
             headers = {"User-Agent": "JobOctubus/1.0 (job-search-tool)"}
             
-            response = await client.head("https://remoteok.io/api", headers=headers, timeout=5.0)
+            # Use GET instead of HEAD and follow redirects
+            response = await client.get("https://remoteok.com/api", headers=headers, timeout=5.0, follow_redirects=True)
             response_time = round((time.time() - start_time) * 1000)
             
-            if response.status_code in [200, 405]:  # 405 is also ok for HEAD request
+            if response.status_code == 200:
                 return {
                     "status": "connected",
                     "message": "RemoteOK API accessible",
+                    "response_time": response_time
+                }
+            else:
+                return {
+                    "status": "error",
+                    "message": f"HTTP {response.status_code}",
+                    "response_time": response_time
+                }
+                
+    except httpx.TimeoutException:
+        return {
+            "status": "timeout",
+            "message": "Request timeout (>5s)",
+            "response_time": 5000
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)[:100],
+            "response_time": round((time.time() - start_time) * 1000)
+        }
+
+async def check_adzuna_status() -> Dict[str, Any]:
+    """Check Adzuna API status"""
+    import time
+    start_time = time.time()
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            url = "https://api.adzuna.com/v1/api/jobs/de/search/1"
+            params = {
+                "app_id": "demo",
+                "app_key": "demo",
+                "results_per_page": 1,
+                "what": "test"
+            }
+            
+            response = await client.get(url, params=params, timeout=5.0)
+            response_time = round((time.time() - start_time) * 1000)
+            
+            if response.status_code == 200:
+                return {
+                    "status": "connected",
+                    "message": "Adzuna API accessible",
                     "response_time": response_time
                 }
             else:
@@ -193,13 +255,14 @@ async def check_thelocal_status() -> Dict[str, Any]:
     
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.head("https://www.thelocal.de/jobs/feed/", timeout=5.0)
+            # TheLocal jobs page (RSS feed might not exist)
+            response = await client.get("https://www.thelocal.de/tag/jobs", timeout=5.0, follow_redirects=True)
             response_time = round((time.time() - start_time) * 1000)
             
-            if response.status_code in [200, 405]:  # 405 is also ok for HEAD request
+            if response.status_code == 200:
                 return {
                     "status": "connected",
-                    "message": "TheLocal RSS feed accessible",
+                    "message": "TheLocal jobs page accessible",
                     "response_time": response_time
                 }
             else:

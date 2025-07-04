@@ -18,20 +18,8 @@ const Jobs: React.FC = () => {
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
 
   useEffect(() => {
-    loadJobs();
+    // No automatic job loading - only show jobs from searches
   }, []);
-
-  const loadJobs = async () => {
-    setLoading(true);
-    try {
-      const jobsData = await jobService.getJobs({ limit: 20 });
-      setJobs(jobsData);
-    } catch (error) {
-      toast.error('Failed to load jobs');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) {

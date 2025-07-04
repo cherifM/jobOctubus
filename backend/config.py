@@ -15,6 +15,13 @@ class Settings(BaseSettings):
     personal_website_cv_en_path: str = "/home/cherif/dev/personal-website/assets/cv/Mihoubi_Med_Cherif_CV_EN.pdf"
     personal_website_cv_de_path: str = "/home/cherif/dev/personal-website/assets/cv/Mihoubi_Med_Cherif_CV_DE.pdf"
     
+    # Job Search Service Configuration
+    enable_remoteok: bool = True
+    enable_arbeitsagentur: bool = False  # Requires OAuth, disabled by default
+    enable_thelocal: bool = False
+    enable_linkedin: bool = True  # Only if API key is provided
+    enable_indeed: bool = True    # Only if API key is provided
+    
     secret_key: str
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30

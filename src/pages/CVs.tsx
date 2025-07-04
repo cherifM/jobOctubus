@@ -50,8 +50,9 @@ const CVs: React.FC = () => {
       setUploadTitle('');
       setUploadLanguage('en');
       toast.success('CV uploaded and parsed successfully');
-    } catch (error) {
-      toast.error('Failed to upload CV');
+    } catch (error: any) {
+      console.error('CV upload error:', error);
+      toast.error(error.response?.data?.detail || 'Failed to upload CV');
     } finally {
       setUploading(false);
     }
